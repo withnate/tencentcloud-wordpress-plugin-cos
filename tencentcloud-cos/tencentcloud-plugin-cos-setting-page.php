@@ -18,9 +18,14 @@
 if (!defined('ABSPATH')) {
     die('We\'re sorry, but you can not directly access this file.');
 }
-$tcwpcos_options = get_option(TENCENT_WORDPRESS_COS_OPTIONS);
+$tcwpcos_options = TencentWordpressCOS::getCosOptons();
 $upload_url_path = get_option(TENCENT_WORDPRESS_COS_UPLOAD_URL_PATH);
 $ajax_url = admin_url(TENCENT_WORDPRESS_COS_ADMIN_AJAX);
+$isInCloudBaseContainer = TencentWordpressCOS::checkIsInCloudBaseContainer();
+if(TencentWordpressCOS::checkIsInCloudBaseContainer()){
+    $upload_url_path = TencentWordpressCOS::getUploadUrlPath();
+}
+//$cloudbase_url_path = TencentWordpressCOS::getUploadUrlPath();
 ?>
 
 <!--TencentCloud COS Plugin Setting Page-->
@@ -31,13 +36,22 @@ $ajax_url = admin_url(TENCENT_WORDPRESS_COS_ADMIN_AJAX);
                 <div class="page-header ">
                     <h1 id="forms">腾讯云对象存储（COS）插件</h1>
                 </div>
+                <?php if (!$isInCloudBaseContainer): ?>
                 <p>WordPress静态文件无缝同步腾讯云对象存储COS，提升网站内容访问速度，降低本地存储开销</p>
+                <?php else: ?>
+                <p>Wordpress静态文件无缝同步到云开发静态托管的cos桶内，提升网站内容访问速度，降低本地存储开销。</p>
+                <?php endif; ?>
             </div>
         </div>
         <div class="postbox">
             <div class="row">
                 <div class="col-lg-9">
                     <form id="wpcosform_cos_info_set" data-ajax-url="<?php echo $ajax_url ?>" name="tcwpcosform" method="post" class="bs-component">
+
+                    <?php if ($isInCloudBaseContainer): ?>
+                        <div style="display: none">
+                    <?php endif; ?>
+
                         <!-- Setting Option no_local_file-->
                         <div class="row form-group">
                             <label class="col-form-label col-lg-2 lable_padding_left" for="inputDefault"><h5>自定义密钥</h5></label>
@@ -148,6 +162,10 @@ $ajax_url = admin_url(TENCENT_WORDPRESS_COS_ADMIN_AJAX);
                                 <p>补充说明：支持cos自定义域名及(cos域名)/自定义目录</p>
                             </div>
                         </div>
+                    <?php if ($isInCloudBaseContainer): ?>
+                        </div>
+                    <?php endif; ?>
+
                         <!-- Setting Option auto_rename-->
                         <div class="row form-group">
                             <label class="col-form-label col-lg-2 lable_padding_left" for="inputDefault"><h5>自动重命名</h5></label>

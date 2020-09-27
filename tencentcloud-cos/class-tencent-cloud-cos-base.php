@@ -24,6 +24,7 @@ class TencentWordpressCosBase {
     public static function getCosClient($options = null)
     {
         $tcwpcos_options = self::getCosOptons();
+        $defaultOptions = $tcwpcos_options;
         if (isset($tcwpcos_options) && isset($tcwpcos_options['customize_secret']) && $tcwpcos_options['customize_secret'] === false) {
             $tcwp_common_options = get_option('tencent_wordpress_common_options');
             $tcwpcos_options['secret_id'] = $tcwp_common_options['secret_id'];
@@ -34,13 +35,20 @@ class TencentWordpressCosBase {
             $tcwpcos_options = $options;
         }
 
+        if(self::checkIsInCloudBaseContainer()){
+            $tcwpcos_options['secret_id'] = $defaultOptions['secret_id'];
+            $tcwpcos_options['secret_key'] = $defaultOptions['secret_key'];
+            $tcwpcos_options['secret_token'] = $defaultOptions['secret_token'];
+        }
+
         return new Qcloud\Cos\Client(
             array(
                 'region' => $tcwpcos_options['region'],
                 'schema' => (self::isHttps() === true) ? "https" : "http",
                 'credentials' => array(
                     'secretId' => $tcwpcos_options['secret_id'],
-                    'secretKey' => $tcwpcos_options['secret_key']
+                    'secretKey' => $tcwpcos_options['secret_key'],
+                    'token' => $tcwpcos_options['secret_token']
                 )
             )
         );
@@ -65,12 +73,79 @@ class TencentWordpressCosBase {
         }
     }
 
+    public static function httpCurl($url,$type='get',$res='json',$arr=''){
+        $timeout = 5;
+        //1.初始化curl
+        $ch = curl_init();
+        //2.设置curl的参数
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $timeout);
+        if($type == 'post'){
+            curl_setopt($ch, CURLOPT_POST,1);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $arr);
+        }
+        //3.采集
+        $output = curl_exec($ch);
+
+        $res;
+        if(curl_error($ch)){
+            //请求失败，返回错误信息
+            $res =  curl_error($ch);
+        }else{
+            //请求成功，返回信息
+            $res = json_decode($output,true);
+        }
+        //4.关闭
+        curl_close($ch);
+        return $res;
+    }
+
+
+    public static function checkIsInCloudBaseContainer(){
+        if(defined('CosRegion') && defined('CosCdnName') && defined('CosBucketId')){
+            return true;
+        }
+        return false;
+    }
+
+    public static function getCloudbaseSecret(){
+        $cloudbaseSecret = get_option("TENCENT_CLOUDBASE_SECRET");
+        if($cloudbaseSecret && $cloudbaseSecret["ExpiredTime"]>time()){
+            return array(
+                'secret_id'  => $cloudbaseSecret["TmpSecretId"],
+                'secret_key' => $cloudbaseSecret["TmpSecretKey"],
+                'secret_token' => $cloudbaseSecret["Token"]
+            );
+        }else{
+            $tokenRes = self::httpCurl("http://metadata.tencentyun.com/meta-data/cam/security-credentials/TCB_QcsRole");
+            if($tokenRes && strcmp($tokenRes['Code'],'Success')==0){
+                update_option("TENCENT_CLOUDBASE_SECRET",$tokenRes);
+            }
+            return array(
+                'secret_id'  => $tokenRes["TmpSecretId"],
+                'secret_key' => $tokenRes["TmpSecretKey"],
+                'secret_token' => $tokenRes["Token"]
+            );
+        }
+    }
+
     /**
      * 获取cos配置信息
      */
     public static function getCosOptons()
     {
-        return get_option(TENCENT_WORDPRESS_COS_OPTIONS);
+        $options = get_option(TENCENT_WORDPRESS_COS_OPTIONS);
+        if(self::checkIsInCloudBaseContainer()){
+            $bucket = CosBucketId;
+            $region = CosRegion;
+
+            $options = array_merge($options,self::getCloudbaseSecret(),array(
+                'bucket'  => $bucket,
+                'region' => $region
+            ));
+        }
+        return $options;
     }
 
     /**
@@ -78,7 +153,15 @@ class TencentWordpressCosBase {
      */
     public static function getUploadUrlPath()
     {
-        return get_option(TENCENT_WORDPRESS_COS_UPLOAD_URL_PATH);
+        if(self::checkIsInCloudBaseContainer()){
+            $cdnName = CosCdnName;
+            if($cdnName && $cdnName[strlen($cdnName)-1]=='/'){
+                $cdnName = substr($cdnName,0,strlen($cdnName)-1);
+            }
+            return "https://".$cdnName.'/wordpress';
+        }else{
+            return get_option(TENCENT_WORDPRESS_COS_UPLOAD_URL_PATH);
+        }
     }
 
 
